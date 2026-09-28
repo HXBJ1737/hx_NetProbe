@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetProbe · 网络结构可视化</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%2322d3ee' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%2322d3ee'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=6">
+<script src="vendor/echarts.min.js"></script>
+<script>window.echarts||document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>')</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    <h1>NetProbe</h1>
+    <span class="brand-sub">网络结构可视化</span>
+  </div>
+  <div class="top-actions">
+    <span class="pill" id="pill-local" title="本机内网 IP">内网 --</span>
+    <span class="pill" id="pill-public" title="公网出口 IP">公网 --</span>
+    <span class="pill mono" id="clock"></span>
+    <span class="dot ok" id="srv-dot" title="服务运行中"></span>
+    <button class="btn" id="btn-refresh">刷新数据</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="overview">总览</button>
+  <button class="tab" data-tab="topo">网络拓扑</button>
+  <button class="tab" data-tab="trace">路由追踪</button>
+  <button class="tab" data-tab="routes">路由表</button>
+  <button class="tab" data-tab="conn">活动连接</button>
+</nav>
+
+<main>
+
+  <!-- ============ 总览 ============ -->
+  <section class="panel active" id="panel-overview">
+    <div class="chips" id="stat-chips">
+      <span class="chip">加载中…</span>
+    </div>
+    <div class="cards" id="ov-cards"></div>
+    <div class="card wide map-card">
+      <div class="card-title">公网出口地理位置 <span class="card-note" id="geo-src"></span></div>
+      <div class="geo-body">
+        <div class="geo-text" id="geo-text">正在获取公网 IP 与归属地…</div>
+        <div id="geo-map-wrap"><iframe id="geo-map" loading="lazy" title="地理位置地图"></iframe></div>
+      </div>
+    </div>
+    <div class="card wide">
+      <div class="card-title">全部网络适配器</div>
+      <div class="table-wrap"><table class="grid" id="adapters-table">
+        <thead><tr><th>适配器</th><th>IPv4</th><th>子网掩码</th><th>MAC / 厂商</th><th>DNS</th><th>状态</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ 拓扑 ============ -->
+  <section class="panel" id="panel-topo">
+    <div class="toolbar">
+      <button class="btn primary" id="btn-scan">扫描局域网</button>
+      <button class="btn danger" id="btn-stop-scan" hidden>停止扫描</button>
+      <button class="btn" id="btn-resetview">重置视图</button>
+      <label class="inline-label">目标 <input class="input" id="trace-target" value="114.114.114.114" spellcheck="false"></label>
+      <button class="btn primary purple" id="btn-trace-topo">追踪公网链路</button>
+      <button class="btn danger" id="btn-stop-trace-topo" hidden>停止追踪</button>
+      <button class="btn" id="btn-clear-trace" title="清除拓扑图上已绘制的追踪链路">清空链路</button>
+      <span class="toolbar-hint">扫描发现局域网设备 · 「追踪公网链路」逐跳实时绘制到本图</span>
+      <div class="progress" id="scan-progress" hidden>
+        <div class="progress-bar"></div><span class="progress-text"></span>
+      </div>
+    </div>
+    <div class="chart-box">
+      <div id="topo-chart"></div>
+      <div class="node-detail" id="node-detail" hidden></div>
+    </div>
+  </section>
+
+  <!-- ============ 路由追踪 ============ -->
+  <section class="panel" id="panel-trace">
+    <div class="toolbar">
+      <label class="inline-label">目标主机 / IP
+        <input class="input wide" id="trace-target2" value="114.114.114.114" spellcheck="false">
+      </label>
+      <button class="btn primary purple" id="btn-trace">开始追踪</button>
+      <button class="btn danger" id="btn-stop-trace" hidden>停止追踪</button>
+      <button class="btn" id="btn-clear-trace2" title="清除拓扑图上已绘制的追踪链路">清空链路</button>
+      <div class="progress" id="trace-progress" hidden>
+        <div class="progress-bar"></div><span class="progress-text"></span>
+      </div>
+      <span class="toolbar-hint" id="trace-hint"></span>
+    </div>
+    <div class="card wide">
+      <div class="card-title">追踪结果 <span class="card-note" id="trace-note"></span></div>
+      <div class="table-wrap"><table class="grid" id="trace-table">
+        <thead><tr><th>跃点</th><th>IP 地址</th><th>网络</th><th>最小延迟</th><th>平均延迟</th><th>归属地 / 运营商</th><th>状态</th></tr></thead>
+        <tbody><tr><td colspan="7" class="empty">尚未发起追踪, 点击「开始追踪」(tracert 最多 20 跳, 约 10-40 秒)</td></tr></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ 路由表 ============ -->
+  <section class="panel" id="panel-routes">
+    <div class="toolbar">
+      <input class="input" id="route-filter" placeholder="筛选: 目标 / 网关 / 接口…">
+      <span class="count-note" id="route-count"></span>
+    </div>
+    <div class="card wide">
+      <div class="card-title">IPv4 活动路由表 <span class="card-note">route print -4</span></div>
+      <div class="table-wrap"><table class="grid" id="routes-table">
+        <thead><tr><th>网络目标</th><th>子网掩码</th><th>网关</th><th>接口</th><th>跃点数</th><th>类型</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ============ 活动连接 ============ -->
+  <section class="panel" id="panel-conn">
+    <div class="toolbar">
+      <select class="input" id="conn-state">
+        <option value="ALL">全部状态</option>
+        <option value="ESTABLISHED">ESTABLISHED</option>
+        <option value="LISTENING">LISTENING</option>
+        <option value="CLOSE_WAIT">CLOSE_WAIT</option>
+        <option value="TIME_WAIT">TIME_WAIT</option>
+      </select>
+      <input class="input" id="conn-q" placeholder="筛选: 地址 / 端口 / 进程…">
+      <span class="count-note" id="conn-count"></span>
+    </div>
+    <div class="card wide">
+      <div class="card-title">TCP 活动连接 <span class="card-note">netstat -ano + 进程关联</span></div>
+      <div class="table-wrap"><table class="grid" id="conn-table">
+        <thead><tr><th>协议</th><th>本地地址</th><th>远程地址</th><th>状态</th><th>PID</th><th>进程</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js?v=6"></script>
+</body>
+</html>
